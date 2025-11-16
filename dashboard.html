@@ -199,12 +199,39 @@
     </div>
 
     <script>
+        // Function to get the secret token from the URL query parameters
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token');
+        }
+
+        // Function to sanitize user-provided strings to prevent XSS
+        function sanitize(str) {
+            const temp = document.createElement('div');
+            temp.textContent = str;
+            return temp.innerHTML;
+        }
+
         async function loadAppointments() {
             const appointmentsList = document.getElementById('appointmentsList');
             appointmentsList.innerHTML = '<div class="loading">Loading appointments...</div>';
 
+            const token = getToken();
+            if (!token) {
+                appointmentsList.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Unauthorized</h3>
+                        <p>A valid access token is required to view this page.</p>
+                    </div>
+                `;
+                return;
+            }
+
             try {
-                const response = await fetch('/appointments');
+                const response = await fetch(`/appointments?token=${token}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch appointments. Check your token.');
+                }
                 const data = await response.json();
 
                 if (data.appointments.length === 0) {
@@ -233,20 +260,26 @@
                         '<span class="badge today">TODAY</span>' : 
                         '<span class="badge upcoming">UPCOMING</span>';
 
+                    // Sanitize all dynamic fields to prevent XSS
+                    const name = sanitize(apt.name || 'No name provided');
+                    const time = sanitize(apt.time || '');
+                    const phone = sanitize(apt.phone || 'Not provided');
+                    const reason = sanitize(apt.reason || 'Not specified');
+
                     return `
                         <div class="appointment-card">
-                            <h4>${apt.name || 'No name provided'} ${badge}</h4>
+                            <h4>${name} ${badge}</h4>
                             <div class="appointment-detail">
                                 <strong>📅 Date:</strong> ${formatDate(apt.date)}
                             </div>
                             <div class="appointment-detail">
-                                <strong>🕐 Time:</strong> ${apt.time}
+                                <strong>🕐 Time:</strong> ${time}
                             </div>
                             <div class="appointment-detail">
-                                <strong>📞 Phone:</strong> ${apt.phone || 'Not provided'}
+                                <strong>📞 Phone:</strong> ${phone}
                             </div>
                             <div class="appointment-detail">
-                                <strong>📝 Reason:</strong> ${apt.reason || 'Not specified'}
+                                <strong>📝 Reason:</strong> ${reason}
                             </div>
                             <div class="appointment-detail">
                                 <strong>📅 Booked:</strong> ${new Date(apt.bookedAt).toLocaleString()}
@@ -262,7 +295,7 @@
                 appointmentsList.innerHTML = `
                     <div class="empty-state">
                         <h3>Error loading appointments</h3>
-                        <p>Make sure the server is running on port 3000</p>
+                        <p>${sanitize(error.message)}</p>
                     </div>
                 `;
             }
@@ -295,9 +328,6 @@
 
         // Load appointments on page load
         loadAppointments();
-
-        // Auto-refresh every 10 seconds
-        setInterval(loadAppointments, 10000);
     </script>
 </body>
 </html>
