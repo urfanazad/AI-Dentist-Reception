@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const twilio = require('twilio');
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -7,9 +8,11 @@ const app = express();
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
-// Configuration - YOU'LL NEED TO ADD YOUR API KEYS
+// Configuration - loaded from .env file
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN;
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 // Startup checks for essential environment variables
 if (!ANTHROPIC_API_KEY) {
@@ -20,8 +23,13 @@ if (!DASHBOARD_TOKEN) {
   console.error('FATAL ERROR: DASHBOARD_TOKEN is not set.');
   process.exit(1);
 }
+if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    console.error('FATAL ERROR: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN must be set.');
+    process.exit(1);
+}
 
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
+const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
 // Simple in-memory storage for testing (replace with real database later)
 let appointments = [];
