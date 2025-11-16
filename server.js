@@ -8,12 +8,25 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 // Configuration - YOU'LL NEED TO ADD YOUR API KEYS
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || 'your-claude-api-key-here';
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const DASHBOARD_TOKEN = process.env.DASHBOARD_TOKEN;
+
+// Startup checks for essential environment variables
+if (!ANTHROPIC_API_KEY) {
+  console.error('FATAL ERROR: ANTHROPIC_API_KEY is not set.');
+  process.exit(1);
+}
+if (!DASHBOARD_TOKEN) {
+  console.error('FATAL ERROR: DASHBOARD_TOKEN is not set.');
+  process.exit(1);
+}
+
 const anthropic = new Anthropic({ apiKey: ANTHROPIC_API_KEY });
 
 // Simple in-memory storage for testing (replace with real database later)
 let appointments = [];
 let conversationHistory = {};
+const CONVERSATION_TIMEOUT = 60 * 60 * 1000; // 1 hour in milliseconds
 
 // Available appointment slots (simplified for testing)
 const availableSlots = {
@@ -59,6 +72,15 @@ When responding, provide your answer in this JSON format:
   }
 }`;
 
+// Middleware to protect sensitive endpoints
+function authMiddleware(req, res, next) {
+  const token = req.query.token;
+  if (!token || token !== DASHBOARD_TOKEN) {
+    return res.status(401).send('Unauthorized');
+  }
+  next();
+}
+
 // Welcome message when someone calls
 app.post('/voice/welcome', (req, res) => {
   const twiml = new VoiceResponse();
@@ -90,11 +112,16 @@ app.post('/voice/process', async (req, res) => {
   try {
     // Initialize conversation history for this call if needed
     if (!conversationHistory[callSid]) {
-      conversationHistory[callSid] = [];
+      conversationHistory[callSid] = {
+        messages: [],
+        lastActivity: Date.now()
+      };
+    } else {
+      conversationHistory[callSid].lastActivity = Date.now();
     }
     
     // Add user message to history
-    conversationHistory[callSid].push({
+    conversationHistory[callSid].messages.push({
       role: 'user',
       content: userSpeech
     });
@@ -108,7 +135,7 @@ app.post('/voice/process', async (req, res) => {
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1000,
       system: SYSTEM_PROMPT + `\n\nCurrent available slots:\n${slotsInfo}\n\nCurrently booked appointments:\n${bookedInfo}`,
-      messages: conversationHistory[callSid]
+      messages: conversationHistory[callSid].messages
     });
     
     const aiResponse = message.content[0].text;
@@ -134,7 +161,7 @@ app.post('/voice/process', async (req, res) => {
     }
     
     // Add AI response to history
-    conversationHistory[callSid].push({
+    conversationHistory[callSid].messages.push({
       role: 'assistant',
       content: aiResponse
     });
@@ -173,7 +200,7 @@ app.post('/voice/process', async (req, res) => {
 });
 
 // Endpoint to view booked appointments (for testing)
-app.get('/appointments', (req, res) => {
+app.get('/appointments', authMiddleware, (req, res) => {
   res.json({
     total: appointments.length,
     appointments: appointments
@@ -186,7 +213,7 @@ app.get('/available-slots', (req, res) => {
 });
 
 // Serve dashboard
-app.get('/dashboard', (req, res) => {
+app.get('/dashboard', authMiddleware, (req, res) => {
   res.sendFile(__dirname + '/dashboard.html');
 });
 
@@ -203,6 +230,17 @@ app.get('/', (req, res) => {
     }
   });
 });
+
+// Periodically clean up old conversation histories
+setInterval(() => {
+  const now = Date.now();
+  for (const callSid in conversationHistory) {
+    if (now - conversationHistory[callSid].lastActivity > CONVERSATION_TIMEOUT) {
+      console.log(`Cleaning up stale conversation for CallSid: ${callSid}`);
+      delete conversationHistory[callSid];
+    }
+  }
+}, 5 * 60 * 1000); // Run every 5 minutes
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
