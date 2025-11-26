@@ -1,0 +1,75 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "sendGridAccountName": {
+      "type": "string",
+      "metadata": {
+        "description": "The name of the SendGrid account."
+      }
+    },
+    "sendGridSku": {
+      "type": "string",
+      "defaultValue": "free",
+      "metadata": {
+        "description": "The pricing tier for the SendGrid account."
+      }
+    }
+  },
+  "variables": {
+    "webAppName": "[concat('webapp', uniqueString(resourceGroup().id))]",
+    "appServicePlanName": "[concat('asp', uniqueString(resourceGroup().id))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2018-02-01",
+      "name": "[variables('appServicePlanName')]",
+      "location": "[resourceGroup().location]",
+      "sku": {
+        "name": "F1",
+        "tier": "Free"
+      },
+      "properties": {
+        "name": "[variables('appServicePlanName')]"
+      }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2018-11-01",
+      "name": "[variables('webAppName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+      },
+      "resources": [
+        {
+          "type": "config",
+          "name": "appsettings",
+          "apiVersion": "2018-11-01",
+          "dependsOn": [
+            "[resourceId('SendGrid.Admin/sendgridaccounts', parameters('sendGridAccountName'))]"
+          ],
+          "properties": {
+            "SENDGRID_API_KEY": "[listKeys(resourceId('SendGrid.Admin/sendgridaccounts', parameters('sendGridAccountName')), '2015-01-01').key1]"
+          }
+        }
+      ]
+    },
+    {
+      "type": "SendGrid.Admin/sendgridaccounts",
+      "apiVersion": "2015-01-01",
+      "name": "[parameters('sendGridAccountName')]",
+      "location": "[resourceGroup().location]",
+      "properties": {
+        "sku": "[parameters('sendGridSku')]"
+      }
+    }
+  ],
+  "outputs": {
+    "webAppUrl": {
+      "type": "string",
+      "value": "[concat('https://', reference(resourceId('Microsoft.Web/sites', variables('webAppName'))).defaultHostName)]"
+    }
+  }
+}
