@@ -116,14 +116,14 @@ async function getAiResponse(currentConversation) {
         ];
 
         const completion = await aiClient.chat.completions.create({
-            model: 'gpt-4-turbo-preview',
+            model: 'gpt-4-turbo',
             messages: messagesForOpenAI,
             response_format: { type: "json_object" },
         });
         return completion.choices[0].message.content;
     } else {
         const message = await aiClient.messages.create({
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-3-opus-20240229',
             max_tokens: 1000,
             system: fullSystemPrompt,
             messages: currentConversation
@@ -194,8 +194,38 @@ app.post('/voice/process', async (req, res) => {
     
   } catch (error) {
     console.error(`Error processing with ${AI_PROVIDER}:`, error);
+    let userMessage = 'I apologize, I am having technical difficulties. Please call back later.';
+
+    // Check for specific API errors from providers
+    if (error instanceof Anthropic.APIError || error instanceof OpenAI.APIError) {
+        if (error.status === 401 || error.status === 403) {
+            console.error(`FATAL: Authentication error with ${AI_PROVIDER}. Check your API key.`);
+            userMessage = 'We are currently unable to connect to our AI assistant. Please call back later.';
+        } else if (error.status === 429) {
+            console.warn(`Rate limit exceeded for ${AI_PROVIDER}.`);
+            userMessage = 'We are experiencing high call volume. Please try again in a few moments.';
+        } else if (error.status >= 500) {
+            console.error(`AI provider ${AI_PROVIDER} is experiencing issues (HTTP ${error.status}).`);
+            userMessage = 'Our AI partner is currently experiencing issues. We apologize for the inconvenience. Please call back later.';
+        }
+    } else if (error.name === 'TimeoutError') {
+        console.warn(`Request to ${AI_PROVIDER} timed out.`);
+        userMessage = 'I had trouble connecting. Could you please repeat what you said?';
+
+        // If it's a timeout, re-gather
+        const twiml = new VoiceResponse();
+        twiml.say({ voice: 'Polly.Amy-Neural', language: 'en-GB' }, userMessage);
+        twiml.gather({
+          input: 'speech',
+          action: '/voice/process',
+          speechTimeout: 'auto',
+          language: 'en-GB'
+        });
+        return res.type('text/xml').send(twiml.toString());
+    }
+
     const twiml = new VoiceResponse();
-    twiml.say({ voice: 'Polly.Amy-Neural', language: 'en-GB' }, 'I apologize, I am having technical difficulties. Please call back later.');
+    twiml.say({ voice: 'Polly.Amy-Neural', language: 'en-GB' }, userMessage);
     res.type('text/xml');
     res.send(twiml.toString());
   }
