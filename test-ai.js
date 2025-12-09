@@ -48,7 +48,7 @@ async function testAi() {
         let response;
         if (AI_PROVIDER === 'openai') {
             const completion = await aiClient.chat.completions.create({
-                model: 'gpt-4-turbo-preview',
+                model: 'gpt-4-turbo',
                 messages: [
                     { role: 'system', content: SYSTEM_PROMPT },
                     { role: 'user', content: testMessage }
@@ -58,7 +58,7 @@ async function testAi() {
             response = completion.choices[0].message.content;
         } else {
             const message = await aiClient.messages.create({
-                model: 'claude-sonnet-4-20250514',
+                model: 'claude-3-opus-20240229',
                 max_tokens: 1000,
                 system: SYSTEM_PROMPT,
                 messages: [{
